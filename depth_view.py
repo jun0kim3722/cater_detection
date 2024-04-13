@@ -7,6 +7,8 @@
 import pyrealsense2 as rs
 # Import Numpy for easy array manipulation
 import numpy as np
+from sklearn.linear_model import RANSACRegressor
+from sklearn.datasets import make_regression
 # Import OpenCV for easy image rendering
 import cv2
 # Import argparse for command-line options
@@ -16,25 +18,77 @@ import os.path
 import pdb
 import matplotlib.pyplot as plt
 
+  
+def estimate_coef(x, y):
+  # number of observations/points
+  n = np.size(x)
+ 
+  # mean of x and y vector
+  m_x = np.mean(x)
+  m_y = np.mean(y)
+ 
+  # calculating cross-deviation and deviation about x
+  SS_xy = np.sum(y*x) - n*m_y*m_x
+  SS_xx = np.sum(x*x) - n*m_x*m_x
+ 
+  # calculating regression coefficients
+  b_1 = SS_xy / SS_xx
+  b_0 = m_y - b_1*m_x
+ 
+  return (b_0, b_1)
+
+   
+def plot_regression_line(x, y, b):
+  # plotting the actual points as scatter plot
+  plt.scatter(x, y, color = "m",
+        marker = "o", s = 30)
+ 
+  # predicted response vector
+  y_pred = b[0] + b[1]*x
+ 
+  # plotting the regression line
+  plt.plot(x, y_pred, color = "g")
+ 
+  # putting labels
+  plt.xlabel('x')
+  plt.ylabel('y')
+  plt.show()
+
 def detect_cater(img):
     height, width = img.shape
     x_medi = np.median(img, axis=1)
     y_medi = np.median(img, axis=0)
     x_mask = np.ones((height,width))
-    y_mask = np.ones((height,width))
+    y_mask = np.zeros((height,width))
 
     for h in range(height):
         x_array = img[h, :]
+        x_array = x_array[x_array != 0]
         outline = np.where((x_array >= x_medi[h] - 200) & (x_array <= x_medi[h] + 200))[0]
         x_mask[h, outline] = 0
+    # plt.imshow(x_mask)
+    # plt.show()
 
     for w in range(width):
+        # deleting zero depth
         y_array = img[:, w]
-        outline = np.where((y_array >= y_medi[w] - 800) & (y_array <= y_medi[w] + 800))[0]
-        y_mask[outline , w] = 0
+        x_array = np.where(y_array != 0)[0]
+        y_array = y_array[y_array != 0]
+        if (len(y_array) < 2):
+            continue
+        
+        # RANSAC
+        ransac = RANSACRegressor(random_state=0).fit(x_array.reshape(-1,1), y_array)
+        # y_prad = ransac.predict(x_range)
+        # ransac_coef = ransac.estimator_.coef_
+        outlier = np.where(~ransac.inlier_mask_)[0]
         # pdb.set_trace()
+        y_mask[outlier, w] = 1
 
-    # mask = np.zeros((height, width))
+        # plt.scatter(x_array[inlier_mask], y_array[inlier_mask], color="blue", label="Inliers")
+        # plt.scatter(x_array[outlier_mask], y_array[outlier_mask], color="red", label="Outliers")
+        # plt.title("RANSAC - outliers vs inliers")
+        # plt.show()
 
     plt.figure(figsize=(30,30))
     plt.subplot(1,3,1)
